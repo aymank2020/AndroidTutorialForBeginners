@@ -10,6 +10,8 @@ package com.example.hussienalrubaye.seekbar;
     import android.support.v4.app.ActivityCompat;
     import android.support.v7.app.AppCompatActivity;
     import android.os.Bundle;
+    import android.os.Handler;
+    import android.os.Looper;
     import android.view.LayoutInflater;
     import android.view.Menu;
     import android.view.MenuItem;
@@ -33,6 +35,16 @@ public class MainActivity extends AppCompatActivity  {
     SeekBar seekBar1;
     MyCustomAdapter Adapater;
 MediaPlayer mp;
+    private boolean playerPrepared;
+    private boolean visible;
+    private final Handler progressHandler = new Handler(Looper.getMainLooper());
+    private final Runnable updateProgress = new Runnable() {
+        @Override
+        public void run() {
+            if (mp != null && playerPrepared) seekBar1.setProgress(mp.getCurrentPosition());
+            if (visible) progressHandler.postDelayed(this, 1000);
+        }
+    };
     int SeekValue;
     ListView ls;
     @Override
@@ -53,7 +65,7 @@ MediaPlayer mp;
 
             @Override
             public void onStopTrackingTouch(SeekBar seekBar) {
-   mp.seekTo(SeekValue);
+                if (mp != null && playerPrepared) mp.seekTo(SeekValue);
             }
         });
         ls=(ListView ) findViewById(R.id.listView);
@@ -63,22 +75,38 @@ MediaPlayer mp;
             public void onItemClick(AdapterView<?> parent, View view, int position, long id) {
 
                 SongInfo songInfo=SongsList.get(position);
+                releasePlayer();
                 mp=new MediaPlayer();
+                mp.setOnPreparedListener(new MediaPlayer.OnPreparedListener() {
+                    @Override
+                    public void onPrepared(MediaPlayer player) {
+                        if (player != mp) return;
+                        playerPrepared = true;
+                        seekBar1.setMax(player.getDuration());
+                        if (visible) player.start();
+                    }
+                });
+                mp.setOnErrorListener(new MediaPlayer.OnErrorListener() {
+                    @Override
+                    public boolean onError(MediaPlayer player, int what, int extra) {
+                        if (player != mp) return true;
+                        releasePlayer();
+                        if (visible) Toast.makeText(MainActivity.this, "Unable to play this song", Toast.LENGTH_SHORT).show();
+                        return true;
+                    }
+                });
                 try {
                     mp.setDataSource(songInfo.Path);
-                    mp.prepare();
-                    mp.start();
-                    seekBar1.setMax(mp.getDuration());
+                    mp.prepareAsync();
                 } catch (IOException e) {
-                    e.printStackTrace();
+                    releasePlayer();
+                    Toast.makeText(MainActivity.this, "Unable to open this song", Toast.LENGTH_SHORT).show();
                 }
 
 
             }
         });
 
-        mythread my= new mythread();
-        my.start();
 
     }
 
@@ -99,6 +127,7 @@ public ArrayList<SongInfo> getAllSongs() {
 }*/
     //local
     public ArrayList<SongInfo> getAllSongs() {
+        SongsList.clear();
         Uri allsongsuri = MediaStore.Audio.Media.EXTERNAL_CONTENT_URI;
         String selection = MediaStore.Audio.Media.IS_MUSIC + " != 0";
 
@@ -124,28 +153,35 @@ public ArrayList<SongInfo> getAllSongs() {
     }
 
 
-    class  mythread extends  Thread{
-        public void run() {
+    @Override
+    protected void onStart() {
+        super.onStart();
+        visible = true;
+        progressHandler.post(updateProgress);
+    }
 
+    @Override
+    protected void onStop() {
+        visible = false;
+        progressHandler.removeCallbacks(updateProgress);
+        releasePlayer();
+        super.onStop();
+    }
 
-        while(true){
-            try {
-                Thread.sleep(1000);
-
-            }  catch (Exception e) {}
-            runOnUiThread(new Runnable() {
-                @Override
-                public void run() {
-                 //seek bar   seekBar1.setProgress(mp .getCurrentPosition());
-                    if (mp !=null)
-                    seekBar1.setProgress(mp.getCurrentPosition());
-                }
-            });
-
-
-
+    private void releasePlayer() {
+        playerPrepared = false;
+        if (mp != null) {
+            mp.release();
+            mp = null;
         }
-    }}
+    }
+
+    @Override
+    protected void onDestroy() {
+        progressHandler.removeCallbacks(updateProgress);
+        releasePlayer();
+        super.onDestroy();
+    }
 
 // adapter
 private class MyCustomAdapter extends BaseAdapter {
@@ -189,18 +225,22 @@ public  MyCustomAdapter(ArrayList<SongInfo> fullsongpath ){
 
 
     public void buplay(View view) {
-        mp.start();
+        if (mp != null && playerPrepared) mp.start();
         //*** play
     }
 
     public void bustop(View view) {
         //*** stop
-        mp.stop();
+        if (mp != null && playerPrepared) {
+            mp.pause();
+            mp.seekTo(0);
+            seekBar1.setProgress(0);
+        }
     }
 
     public void bupuse(View view) {
         //*** pause
-        mp.pause();
+        if (mp != null && playerPrepared && mp.isPlaying()) mp.pause();
     }
 
     void CheckUserPermsions(){
@@ -226,7 +266,7 @@ public  MyCustomAdapter(ArrayList<SongInfo> fullsongpath ){
     public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
         switch (requestCode) {
             case REQUEST_CODE_ASK_PERMISSIONS:
-                if (grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+                if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
                     LoadSng();
                 } else {
                     // Permission Denied

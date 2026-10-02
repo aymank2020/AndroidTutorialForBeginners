@@ -62,7 +62,8 @@ public class MainActivity extends AppCompatActivity {
         listnewsData.clear();
         Cursor cursor=dbManager.query(null,"UserName like ? ",SelectionsArgs,DBManager.ColUserName);
 
-        if (cursor.moveToFirst()){
+        try {
+        if (cursor != null && cursor.moveToFirst()){
             String tableData="";
             do {
                 /*tableData+=cursor.getString(cursor.getColumnIndex(DBManager.ColUserName))+ ","+
@@ -76,6 +77,10 @@ public class MainActivity extends AppCompatActivity {
             }while (cursor.moveToNext());
 
             Toast.makeText(getApplicationContext(),tableData,Toast.LENGTH_LONG).show();
+        }
+
+        } finally {
+            if (cursor != null) cursor.close();
         }
 
         myadapter=new MyCustomAdapter(listnewsData);
